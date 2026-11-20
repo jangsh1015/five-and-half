@@ -136,7 +136,7 @@ input[type=range]::-webkit-slider-thumb{-webkit-appearance:none;width:19px;heigh
 
   <div id="stage">
     <canvas id="c" role="img" aria-label="3쿠션 파이브앤하프 시뮬레이터 당구대"></canvas>
-    <div id="hint">공과 조준점을 손가락으로 끌어 보세요</div>
+    <div id="hint">수구와 파란 1쿠션을 쿠션 둘레 어디로든 끌어 보세요</div>
   </div>
 
   <section id="landNote">
@@ -146,7 +146,8 @@ input[type=range]::-webkit-slider-thumb{-webkit-appearance:none;width:19px;heigh
       <li>수구 중심에서 1쿠션 쪽으로 큐를 뻗어 <b>수구 수</b>를 읽는다</li>
       <li><b>수구 수 − 3쿠션 수 = 1쿠션 수</b> → 그 눈금을 겨냥한다</li>
     </ol>
-    <p>3쿠션까지는 계산값 그대로 떨어집니다. 4쿠션 자리는 3쿠션수가 정합니다 — <b>20</b>이면 오른쪽 아래 90 코너, <b>20보다 작으면</b> 코너를 돌아 오른쪽 장쿠션(장다이)으로, <b>20보다 크면</b> 아래 단쿠션(단다이)으로 떨어집니다. 50−30=20 → 코너 · 45−30=15 → 장다이 · 50−20=30 → 단다이.</p>
+    <p>3쿠션까지는 계산값 그대로 떨어집니다. 4쿠션 자리는 3쿠션수가 정합니다 — <b>20</b>이면 코너, <b>20보다 작으면</b> 코너를 돌아 1쿠션 쪽 쿠션(장다이/단다이)으로, <b>20보다 크면</b> 반대편에서 옆 쿠션(단다이/장다이)으로 떨어집니다. 50−30=20 → 코너 · 45−30=15 → 장다이 · 50−20=30 → 단다이.</p>
+    <p>파란 <b>1쿠션</b>은 오른쪽·왼쪽 장쿠션은 물론 위·아래 단쿠션 어디로든 옮길 수 있습니다. 1쿠션을 놓은 쿠션을 기준으로 눈금과 계산, 1→2→3→4쿠션 궤적이 함께 돌아갑니다.</p>
     <p>중상단 2팁에 3레일 속도로 부드럽게 밀어칩니다. 세기가 달라지면 같은 겨냥점도 다른 곳에 떨어집니다.</p>
   </section>
 
@@ -171,11 +172,16 @@ input[type=range]::-webkit-slider-thumb{-webkit-appearance:none;width:19px;heigh
 'use strict';
 
 /* ---------------------------------------------------------------
-   파이브앤하프 시스템
+   파이브앤하프 시스템 (사방향 지원)
    - 수구수 − 1쿠션수 = 3쿠션수
-   - 수구수: 왼쪽 장쿠션 1칸에 5 (코너 50 → 10), 아래 단쿠션 연장 1칸에 10 (50 → 90)
-   - 1쿠션수: 오른쪽 장쿠션 1칸에 10 (윗코너 0), 50 지나면 반 칸에 10
-   - 3쿠션수: 왼쪽 장쿠션 1칸에 10 (윗코너 0), 40 지나면 반 칸에 10
+   - 1쿠션은 위·아래 단쿠션, 왼쪽·오른쪽 장쿠션 어디에나 놓을 수 있다.
+     놓인 쿠션을 기준으로 눈금·계산·1→2→3→4쿠션 궤적이 함께 돈다.
+   - 프레임 좌표 (s, n): 1쿠션 쿠션이 n = 0, 그 반대편 쿠션이 n = W.
+     s는 1쿠션 쿠션을 따라 0..L.
+   - 눈금은 쿠션 길이에 맞춰 정규화했다. 오른쪽 장쿠션에서는 예전과 똑같다.
+       수구수   반대편 쿠션 10(반대 코너) → 50(코너), 옆 단쿠션 50 → 90
+       1쿠션수  겨냥한 쿠션 0 → 110 (50 지나면 반 칸에 10)
+       3쿠션수  반대편 쿠션 0 → 120 (40 지나면 반 칸에 10)
    --------------------------------------------------------------- */
 
 var TW = 4, TH = 8;                       // 테이블 단위 (가로 4칸 × 세로 8칸)
@@ -186,11 +192,12 @@ window.addEventListener('unhandledrejection', function(e){ ERR.push('reject:' + 
 
 var S = {
   cue:    { x: 0.42, y: 7.36 },
-  aimY:   3.0,          // 1쿠션(오른쪽 장쿠션) 위치
-  targetT:20,           // 3쿠션 목표값 (목표 모드)
-  mode:   'aim',        // 'aim' | 'target'
-  adj:    0,            // 보정
-  rot:    false,        // 표 눕히기
+  rail:   'right',        // 1쿠션이 놓인 쿠션: right|top|left|bottom
+  aimS:   3.0,            // 그 쿠션 위 1쿠션 위치 (프레임 s)
+  targetT:20,             // 3쿠션 목표값 (목표 모드)
+  mode:   'aim',          // 'aim' | 'target'
+  adj:    0,              // 보정
+  rot:    false,          // 표 눕히기
   cloth:  'green',
   nums:   true,
   guide:  true,
@@ -199,106 +206,145 @@ var S = {
 
 function clamp(v,a,b){ return v<a?a:(v>b?b:v); }
 
-/* ---------- 눈금 ↔ 위치 ---------- */
-function cueFromLeft(y){ return 10 + 5*y; }        // 0..8 → 10..50
-function leftFromCue(v){ return (v-10)/5; }
-function cueFromBottom(x){ return 50 + 10*x; }     // 0..4 → 50..90
-function bottomFromCue(v){ return (v-50)/10; }
-function p1From(y){ return y<=5 ? 10*y : 50 + 20*(y-5); }
-function yFromP1(v){ return v<=50 ? v/10 : 5 + (v-50)/20; }
-function t3From(y){ return y<=4 ? 10*y : 40 + 20*(y-4); }
-function yFromT3(v){ return v<=40 ? v/10 : 4 + (v-40)/20; }
+/* ---------- 쿠션별 프레임 ----------
+   f(x,y)  테이블 좌표 → (s,n)
+   t(s,n)  (s,n) → 테이블 좌표
+   opp     반대편 쿠션 (수구수·3쿠션수 눈금)
+   endS    s = L 쪽 쿠션 (수구수 연장·4쿠션)
+   startS  s = 0 쪽 쿠션 (2쿠션)                                        */
+var FRAMES = {
+  right: { key:'right', name:'오른쪽 장쿠션', L:TH, W:TW, opp:'left', endS:'bottom', startS:'top',
+           f:function(x,y){ return { s:y, n:TW-x }; },
+           t:function(s,n){ return { x:TW-n, y:s }; } },
+  left:  { key:'left',  name:'왼쪽 장쿠션',   L:TH, W:TW, opp:'right', endS:'top', startS:'bottom',
+           f:function(x,y){ return { s:TH-y, n:x }; },
+           t:function(s,n){ return { x:n, y:TH-s }; } },
+  top:   { key:'top',   name:'위 단쿠션',     L:TW, W:TH, opp:'bottom', endS:'right', startS:'left',
+           f:function(x,y){ return { s:x, n:y }; },
+           t:function(s,n){ return { x:s, y:n }; } },
+  bottom:{ key:'bottom',name:'아래 단쿠션',   L:TW, W:TH, opp:'top', endS:'left', startS:'right',
+           f:function(x,y){ return { s:TW-x, n:TH-y }; },
+           t:function(s,n){ return { x:TW-s, y:TH-n }; } }
+};
+var RAIL_ORDER = ['right','top','left','bottom'];
+function FR(){ return FRAMES[S.rail] || FRAMES.right; }
+function railName(k){ return (FRAMES[k] || FRAMES.right).name; }
 
-function t3Labels(){
-  var a=[], i;
-  for(i=0;i<=4;i++) a.push([i, i*10]);
-  for(i=1;i<=8;i++) a.push([4+i*0.5, 40+i*10]);
-  return a;
-}
-function p1Labels(){
-  var a=[], i;
-  for(i=0;i<=5;i++) a.push([i, i*10]);
-  for(i=1;i<=6;i++) a.push([5+i*0.5, 50+i*10]);
-  return a;
-}
+/* ---------- 눈금 ↔ 프레임 위치 ---------- */
+function p1Of(s, Lf){ var r = s/Lf; return r <= 0.625 ? 80*r : 50 + 160*(r-0.625); }
+function sOfP1(v, Lf){ var r = v <= 50 ? v/80 : 0.625 + (v-50)/160; return clamp(r,-0.05,1.05)*Lf; }
+function scOf(s, Lf){ return 10 + 40*(s/Lf); }              // 10(반대 코너) → 50(코너)
+function extOf(n, Wf){ return 50 + 40*(1 - n/Wf); }         // 50(코너) → 90
+function t3Of(s, Lf){ var r = s/Lf; return r <= 0.5 ? 80*r : 40 + 160*(r-0.5); }
+function sOfT(v, Lf){ var r = v <= 40 ? v/80 : 0.5 + (v-40)/160; return clamp(r,-0.05,1.05)*Lf; }
 
-/* ---------- 수구수 읽기 (수구 → 1쿠션 선의 뒤쪽 연장) ---------- */
-function readCue(cue, aim){
-  var dx = aim.x - cue.x, dy = aim.y - cue.y, best = null, t, x, y;
-  if (Math.abs(dx) > 1e-9){
-    t = (0 - cue.x)/dx;                 // 왼쪽 장쿠션
-    if (t <= 0){ y = cue.y + dy*t; best = {t:t, y:y, kind:'left'}; }
-  }
-  if (Math.abs(dy) > 1e-9){
-    t = (TH - cue.y)/dy;                // 아래 단쿠션
-    x = cue.x + dx*t;
-    if (t <= 0 && x >= -1e-6 && x <= TW+1e-6 && (!best || t > best.t)){
-      best = {t:t, x:x, kind:'bottom'};
+/* ---------- 수구수 읽기 (수구 → 1쿠션 선을 뒤로 연장) ---------- */
+function readCue(c, aimS){
+  var F = FR(), Lf = F.L, Wf = F.W;
+  var ds = c.s - aimS, dn = c.n;            // 뒤쪽(1쿠션 반대) 진행 방향
+  var best = null;
+  if (Math.abs(dn) > 1e-9){                 // 반대편 쿠션
+    var t = (Wf - c.n)/dn;
+    if (t > 0){
+      var s = c.s + ds*t;
+      best = { t:t, v:scOf(clamp(s, 0, Lf), Lf), kind:'opp', s:s,
+               ok:(s >= -0.02 && s <= Lf + 0.02) };
     }
   }
-  if (!best) return { v: cueFromLeft(cue.y), kind:'left', ok:false };
-  if (best.kind === 'bottom') return { v: cueFromBottom(best.x), kind:'bottom', ok:true };
-  var ok = best.y >= -0.001 && best.y <= TH + 0.001;
-  return { v: cueFromLeft(best.y), kind:'left', ok:ok };
+  if (Math.abs(ds) > 1e-9){                 // s = L 쪽 쿠션 (수구수 연장)
+    var t2 = (Lf - c.s)/ds, n2 = c.n + dn*t2;
+    if (t2 > 0 && n2 >= -0.02 && n2 <= Wf + 0.02 && (!best || t2 < best.t)){
+      best = { t:t2, v:extOf(n2, Wf), kind:'endS', n:n2, ok:true };
+    }
+  }
+  if (!best) best = { v:scOf(c.s, Lf), kind:'opp', ok:false };
+  return best;
 }
 
 /* ---------- 3쿠션 목표 → 1쿠션 겨냥점 역산 ---------- */
 function solveAim(tTarget){
-  var cue = S.cue, lo = 0.08, hi = 7.7, i, m;
-  function f(p){
-    var s = readCue(cue, {x:TW, y:p}).v;
-    return (s - p1From(p)) - (tTarget - S.adj);
+  var F = FR(), Lf = F.L, c = F.f(S.cue.x, S.cue.y);
+  var lo = 0.05, hi = Lf - 0.05, N = 64, i;
+  function f(s){
+    var rd = readCue(c, s);
+    return (rd.v - p1Of(s, Lf)) - (tTarget - S.adj);
   }
-  if (f(lo) <= 0) return lo;
-  if (f(hi) >= 0) return hi;
-  for (i=0;i<46;i++){ m = (lo+hi)/2; if (f(m) > 0) lo = m; else hi = m; }
-  return (lo+hi)/2;
+  var fa = f(lo), bestS = lo, bestE = Math.abs(fa), sol = null;
+  for (i=1;i<=N;i++){
+    var s1 = lo + (hi-lo)*(i-1)/N, s2 = lo + (hi-lo)*i/N, fb = f(s2);
+    if (Math.abs(fb) < bestE){ bestE = Math.abs(fb); bestS = s2; }
+    if ((fa < 0 && fb > 0) || (fa > 0 && fb < 0)){
+      var a = s1, b = s2, k;
+      for (k=0;k<48;k++){
+        var m = (a+b)/2, fm = f(m);
+        if ((fm < 0) === (fa < 0)) a = m; else b = m;
+      }
+      if (sol === null) sol = (a+b)/2;
+    }
+    fa = fb;
+  }
+  return sol === null ? bestS : sol;
 }
 
-function railHitAfter(p, vx, vy){
-  var t = Infinity;
-  if (vx > 1e-9) t = Math.min(t, (TW - p.x)/vx);
-  if (vx < -1e-9) t = Math.min(t, (0 - p.x)/vx);
-  if (vy > 1e-9) t = Math.min(t, (TH - p.y)/vy);
-  if (vy < -1e-9) t = Math.min(t, (0 - p.y)/vy);
-  if (!isFinite(t)) t = 0;
-  return { x: p.x + vx*t, y: p.y + vy*t };
+/* ---------- 반사: 쿠션에 부딪힌 뒤 처음 만나는 쿠션 ---------- */
+function firstHit(s0, n0, ds, dn){
+  var F = FR(), Lf = F.L, Wf = F.W, best = null, t;
+  function take(t2, s2, n2){ if (t2 > 1e-6 && (best === null || t2 < best.t)) best = { t:t2, s:s2, n:n2 }; }
+  if (dn >  1e-9){ t = (Wf - n0)/dn; take(t, s0 + ds*t, Wf); }
+  if (dn < -1e-9){ t = (0  - n0)/dn; take(t, s0 + ds*t, 0);  }
+  if (ds >  1e-9){ t = (Lf - s0)/ds; take(t, Lf, n0 + dn*t); }
+  if (ds < -1e-9){ t = (0  - s0)/ds; take(t, 0,  n0 + dn*t); }
+  if (best === null) best = { s:s0, n:n0 };
+  best.s = clamp(best.s, 0, Lf);
+  best.n = clamp(best.n, 0, Wf);
+  return best;
 }
 
 /* ---------- 모델 ---------- */
 function model(){
-  if (S.mode === 'target') S.aimY = solveAim(S.targetT);
-  var cue = { x:S.cue.x, y:S.cue.y };
-  var aim = { x:TW, y:S.aimY };
-  var rd  = readCue(cue, aim);
-  var P   = p1From(S.aimY);
+  var F = FR(), Lf = F.L, Wf = F.W;
+  var c = F.f(S.cue.x, S.cue.y);
+  if (S.mode === 'target') S.aimS = solveAim(S.targetT);
+  S.aimS = clamp(S.aimS, 0.05, Lf - 0.05);
+
+  var aimS = S.aimS;
+  var aim  = F.t(aimS, 0);
+  var rd   = readCue(c, aimS);
+  var P    = p1Of(aimS, Lf);
   var Traw = rd.v - P + S.adj;
-  var Tin = clamp(Traw, 0, 120);
-  var p3  = { x:0, y:yFromT3(Tin) };
-  var dx = aim.x - cue.x, dy = aim.y - cue.y;
-  var p2 = railHitAfter(aim, -dx, dy);
+  var Tin  = clamp(Traw, 0, 120);
+  var p3   = F.t(sOfT(Tin, Lf), Wf);
+
+  /* 2쿠션: 1쿠션에서 반사한 방향이 처음 만나는 쿠션 */
+  var hs = firstHit(aimS, 0, aimS - c.s, c.n);
+  var p2 = F.t(hs.s, hs.n);
+
   /* 4쿠션: 반사각을 그대로 쓰지 않고, 3쿠션수(T)가 정하는 4쿠션 자리표를 따른다.
-       T = 20 → 오른쪽 아래 90 코너 바로 옆 (3.95, 8)
-       T < 20 → 코너를 돌아 오른쪽 장쿠션(장다이)으로 올라간다
-       T > 20 → 아래 단쿠션(단다이)을 왼쪽으로 내려온다
+       T = 20 → 코너 바로 옆
+       T < 20 → 코너를 돌아 1쿠션 쿠션(장다이/단다이)으로
+       T > 20 → 반대편 쿠션에서 옆 쿠션(단다이/장다이) 쪽으로
      같은 3쿠션수면 수구 위치가 달라도 같은 자리에 떨어지도록 T만 쓴다. */
   var Teff = Math.max(0, Tin);
-  var p4, p4Rail, p4Zone;
+  var p4, p4Rail, p4Len;
   if (Teff < 20 - 1e-6){
-    p4 = { x:TW, y:clamp(TH - (20 - Teff)*0.24, 0, TH) };
-    p4Rail = 'right';
+    p4 = F.t(clamp(Lf*(1 - 0.03*(20 - Teff)), 0, Lf), 0);
+    p4Rail = S.rail; p4Len = Lf;
   } else {
-    p4 = { x:clamp(TW - (Teff - 20)*0.14 - 0.05, 0, TW), y:TH };
-    p4Rail = 'bottom';
+    p4 = F.t(Lf, clamp(Wf*(0.0125 + 0.035*(Teff - 20)), 0, Wf));
+    p4Rail = F.endS; p4Len = Wf;
   }
-  p4Zone = (Math.abs(Teff - 20) < 0.15) ? 'corner'
-         : (Teff < 20 ? 'long' : 'short');   // 장다이 / 단다이
-  var degH = Math.atan2(Math.abs(dy), Math.abs(dx)) * 180/Math.PI;
+  var p4Zone = (Math.abs(Teff - 20) < 0.15) ? 'corner' : (Teff < 20 ? 'long' : 'short');
+  var p4Text = p4Zone === 'corner' ? '코너' : (p4Len > 5.5 ? '장다이' : '단다이');
+
+  var degH = Math.atan2(Math.abs(c.n), Math.abs(aimS - c.s)) * 180/Math.PI;
+
   return {
-    cue:cue, aim:aim, p2:p2, p3:p3, p4:p4, p4Rail:p4Rail, p4Zone:p4Zone,
+    cue:{ x:S.cue.x, y:S.cue.y }, aim:aim, p2:p2, p3:p3, p4:p4,
+    p4Rail:p4Rail, p4Zone:p4Zone, p4Text:p4Text,
     S:rd.v, P:P, T:Traw, okS:rd.ok, okT:(Traw >= 0 && Traw <= 120),
     where:rd.kind, degH:degH, degCush:90-degH,
-    standard: (p2.y < 0.02)                     // 2쿠션이 위 단쿠션인지
+    rail:S.rail, railName:F.name, L:Lf, W:Wf,
+    standard: (p2.y < 0.02)
   };
 }
 
@@ -474,49 +520,81 @@ function putTxt(txt, rail, p, dist, font, color, weight, align){
   ctx.fillText(txt, p.x + rail.n.x*dist, p.y + rail.n.y*dist);
 }
 
-function drawNumbers(){
-  var R = railGeom();
-  var f = clamp(L.s*0.135, 7.5, 12);
-  var p, i;
-  var dense = L.s >= 42;          // 아주 좁은 화면(눕힌 보기)에서는 기본 눈금만
+/* 1쿠션을 놓은 쿠션을 기준으로 눈금이 함께 돈다. */
+function labelSets(){
+  var F = FR(), Lf = F.L, Wf = F.W, v;
+  var out = { p1:[], sc:[], ext:[], t3:[], c2:[], c4:[] };
+  for (v=0; v<=110; v+=10)
+    out.p1.push({ s:sOfP1(v,Lf), n:0, txt:String(v), anchor:(v===0 || v===50) });
+  for (v=10; v<=50; v+=10)
+    out.sc.push({ s:Lf*(v-10)/40, n:Wf, txt:String(v), anchor:(v===10 || v===50) });
+  for (v=60; v<=90; v+=10)
+    out.ext.push({ s:Lf, n:Wf*(1-(v-50)/40), txt:String(v), anchor:(v===60 || v===90) });
+  for (v=0; v<=120; v+=10)
+    out.t3.push({ s:sOfT(v,Lf), n:Wf, txt:String(v), anchor:(v===0 || v===40) });
+  for (v=10; v<=30; v+=10){
+    out.c2.push({ s:0,  n:Wf*v/40, txt:String(v), anchor:false });
+    out.c4.push({ s:Lf, n:Wf*(1-v/40), txt:String(v), anchor:false });
+  }
+  return out;
+}
 
-  // 수구수 — 왼쪽 장쿠션 (10~50)
-  for (i=0;i<=8;i++){
-    p = t2p(0,i);
-    putTxt(String(10+5*i), R.left, p, L.rail*0.66, f, 'rgba(255,255,255,.92)', 700);
+function drawNumbers(){
+  var F = FR(), R = railGeom();
+  var f = clamp(L.s*0.135, 7.5, 12);
+  var dense = L.s >= 42;
+  var sets = labelSets();
+  var i;
+  if (!dense){
+    sets.p1  = sets.p1.filter(function(it){ return parseFloat(it.txt) <= 50; });
+    sets.t3  = sets.t3.filter(function(it){ return parseFloat(it.txt) <= 40; });
+    sets.c2  = []; sets.c4 = [];
   }
-  // 수구수 연장 — 아래 단쿠션 (60~90)
-  for (i=1;i<=4;i++){
-    p = t2p(i,TH);
-    putTxt(String(50+10*i), R.bottom, p, L.rail*0.66, f, 'rgba(255,255,255,.92)', 700);
+
+  function prep(list){
+    var a = [], k;
+    for (k=0;k<list.length;k++){
+      var q = F.t(list[k].s, list[k].n), sp = t2p(q.x, q.y);
+      a.push({ sp:sp, txt:list[k].txt, anchor:list[k].anchor });
+    }
+    return a;
   }
-  // 1쿠션수 — 오른쪽 장쿠션 안쪽
-  p1Labels().forEach(function(l){
-    if (!dense && l[0] > 5) return;
-    p = t2p(TW, l[0]);
-    putTxt(String(l[1]), R.right, p, -16, f*0.94, 'rgba(112,214,250,.82)', 600);
-  });
-  // 3쿠션수 — 왼쪽 장쿠션 안쪽
-  t3Labels().forEach(function(l){
-    if (!dense && l[0] > 4) return;
-    p = t2p(0, l[0]);
-    putTxt(String(l[1]), R.left, p, -16, f*0.94, 'rgba(255,203,92,.8)', 600);
-  });
+  function fit(list, font, gap){
+    var minGap = Math.max(gap || 14, font*1.9), keep = [], k, n;
+    function far(it){
+      for (n=0;n<keep.length;n++)
+        if (Math.hypot(it.sp.x-keep[n].sp.x, it.sp.y-keep[n].sp.y) < minGap) return false;
+      return true;
+    }
+    for (k=0;k<list.length;k++) if (list[k].anchor && far(list[k])) keep.push(list[k]);
+    for (k=0;k<list.length;k++) if (!list[k].anchor && far(list[k])) keep.push(list[k]);
+    return keep;
+  }
+  function draw(list, railKey, dist, font, color, weight, gap){
+    var keep = fit(prep(list), font, gap), k;
+    for (k=0;k<keep.length;k++)
+      putTxt(keep[k].txt, R[railKey], keep[k].sp, dist, font, color, weight);
+  }
+
+  // 수구수 — 1쿠션 반대편 쿠션 (10~50)
+  draw(sets.sc, F.opp, L.rail*0.66, f, 'rgba(255,255,255,.92)', 700);
+  // 수구수 연장 — 옆 쿠션 (60~90)
+  draw(sets.ext, F.endS, L.rail*0.66, f, 'rgba(255,255,255,.92)', 700);
+  // 1쿠션수 — 1쿠션 쿠션 안쪽
+  draw(sets.p1, S.rail, -16, f*0.94, 'rgba(112,214,250,.82)', 600);
+  // 3쿠션수 — 반대편 쿠션 안쪽
+  draw(sets.t3, F.opp, -16, f*0.94, 'rgba(255,203,92,.8)', 600);
   if (!dense) return;
-  // 2쿠션수 — 위 단쿠션 안쪽 (오른쪽 0 → 왼쪽 40)
-  for (i=1;i<=3;i++){
-    p = t2p(i,0);
-    putTxt(String((4-i)*10), R.top, p, -19, f*0.9, 'rgba(214,190,255,.72)', 600);
-  }
-  // 4쿠션수 — 아래 단쿠션 안쪽 (왼쪽 0 → 오른쪽 40)
-  for (i=1;i<=3;i++){
-    p = t2p(i,TH);
-    putTxt(String(i*10), R.bottom, p, -19, f*0.9, 'rgba(214,190,255,.72)', 600);
-  }
+  // 2쿠션수 — s = 0 쿠션 안쪽
+  draw(sets.c2, F.startS, -19, f*0.9, 'rgba(214,190,255,.72)', 600);
+  // 4쿠션수 — s = L 쿠션 안쪽
+  draw(sets.c4, F.endS, -19, f*0.9, 'rgba(214,190,255,.72)', 600);
 }
 
 function drawGuide(m){
-  var A = t2p(0,TH), B = t2p(TW, S.aimY);
+  var F = FR();
+  var c0 = F.t(F.L, F.W);                    // 50 코너
+  var A = t2p(c0.x, c0.y), B = t2p(m.aim.x, m.aim.y);
   var dx = B.x-A.x, dy = B.y-A.y;
   var C = { x:B.x + dx*0.10, y:B.y + dy*0.10 };
   ctx.save();
@@ -617,6 +695,11 @@ function drawMarkers(m){
   var D = t2p(m.p3.x, m.p3.y);
   var E = t2p(m.p4.x, m.p4.y);
   var r = Math.max(7, L.s*BALL_R*1.5);
+  var ctr = t2p(TW/2, TH/2);
+  function inw(p, d){
+    var dx = ctr.x-p.x, dy = ctr.y-p.y, l = Math.hypot(dx,dy) || 1;
+    return { x:p.x + dx/l*d, y:p.y + dy/l*d };
+  }
 
   // 2쿠션 · 4쿠션 점
   ctx.fillStyle = 'rgba(140,226,255,.9)';
@@ -653,16 +736,13 @@ function drawMarkers(m){
   ctx.strokeStyle = 'rgba(10,20,30,.35)'; ctx.lineWidth = 1;
   ctx.beginPath(); ctx.arc(A.x,A.y,r,0,Math.PI*2); ctx.stroke();
 
-  // 숫자 말풍선
-  var dCN = 24;
+  // 숫자 말풍선 — 표 안쪽으로 붙여 어느 쿠션이든 화면을 벗어나지 않게
+  var b1 = inw(B, 42), b3 = inw(D, 46), b4 = inw(E, 62);
+  if (Math.hypot(b1.x-b4.x, b1.y-b4.y) < 58) b4 = inw(E, 96);   // 4쿠션과 1쿠션이 같은 쿠션일 때
   pill('수구 ' + fmt(m.S), A.x + 36, A.y - r - 20, '#ffffff');
-  pill('1쿠션 ' + fmt(m.P), B.x - 50, B.y - 26, '#5cd0ff');
-  pill('3쿠션 ' + fmt(m.T), D.x + 58, D.y + 22, '#ffc857');
-  // 4쿠션 말풍선은 점에서 테이블 안쪽으로 붙여, 눕힌 보기에서도 쿠션 위로 뜨지 않게
-  var Ec = t2p(TW/2, TH/2);
-  var dxl = Ec.x - E.x, dyl = Ec.y - E.y, dl = Math.hypot(dxl, dyl) || 1;
-  pill('4쿠션 ' + (m.p4Zone === 'corner' ? '코너' : m.p4Zone === 'long' ? '장다이' : '단다이'),
-       E.x + dxl/dl*66, E.y + dyl/dl*52, '#ffc857');
+  pill('1쿠션 ' + fmt(m.P), b1.x, b1.y - 6, '#5cd0ff');
+  pill('3쿠션 ' + fmt(m.T), b3.x, b3.y + 4, '#ffc857');
+  pill('4쿠션 ' + m.p4Text, b4.x, b4.y, '#ffc857');
 }
 
 function drawLandCaption(m){
@@ -680,10 +760,11 @@ function drawLandCaption(m){
 }
 
 function drawLegend(){
+  var F = FR();
   var lines = [
-    ['수구', '왼쪽 장쿠션 1칸 5 (코너 50 → 10) · 아래 단쿠션 1칸 10 (50 → 90)', '#ffffff'],
-    ['1쿠션', '오른쪽 장쿠션 1칸 10 (윗코너 0) · 50부터 반 칸 10', '#5cd0ff'],
-    ['3쿠션', '왼쪽 장쿠션 1칸 10 (윗코너 0) · 40부터 반 칸 10', '#ffc857']
+    ['수구',  '1쿠션 반대편 쿠션 50(코너) → 10 · 옆 쿠션 50 → 90', '#ffffff'],
+    ['1쿠션', F.name + ' 0 → 110 (50 뒤 반 칸 10)', '#5cd0ff'],
+    ['3쿠션', '반대편 쿠션 0 → 120 (40 뒤 반 칸 10)', '#ffc857']
   ];
   var f = 10.5, lh = 15;
   var top = L.py - L.rail - 14 - lines.length*lh;
@@ -710,15 +791,15 @@ function updateCard(m){
   document.getElementById('v2').textContent = fmt(m.P);
   document.getElementById('v3').textContent = fmt(m.T);
   document.getElementById('sub').innerHTML =
-    '출발 <b>' + m.degH.toFixed(0) + '°</b> · 1쿠션 입사 <b>' + m.degCush.toFixed(0) +
-    '°</b> / 반사 <b>' + m.degCush.toFixed(0) + '°</b>';
+    '1쿠션 <b>' + m.railName + '</b> · 출발 <b>' + m.degH.toFixed(0) + '°</b> · 입사 <b>' +
+    m.degCush.toFixed(0) + '°</b> / 반사 <b>' + m.degCush.toFixed(0) + '°</b>';
   var tip = document.getElementById('tip');
   tip.classList.remove('warn');
   if (!m.okS){
-    tip.textContent = '수구 수가 기준(왼쪽·아래 쿠션) 밖입니다 — 공을 안쪽으로 옮겨 보세요';
+    tip.textContent = '수구 수가 기준 쿠션 밖입니다 — 공을 안쪽으로 옮겨 보세요';
     tip.classList.add('warn');
   } else if (!m.okT){
-    tip.textContent = '3쿠션 지점이 쿠션 밖입니다 — 조준점을 조금 올려 보세요';
+    tip.textContent = '3쿠션 지점이 쿠션 밖입니다 — 1쿠션 조준점을 조금 옮겨 보세요';
     tip.classList.add('warn');
   } else {
     tip.textContent = tipText(m);
@@ -740,29 +821,53 @@ function screenPt(ev){
   return { x: ev.clientX - r.left, y: ev.clientY - r.top };
 }
 
+function aimPoint(){ var q = FR().t(S.aimS, 0); return t2p(q.x, q.y); }
+function targetPoint(){
+  var F = FR(), q = F.t(sOfT(clamp(S.targetT,0,120), F.L), F.W);
+  return t2p(q.x, q.y);
+}
+
 function hitTest(x,y){
-  var m = { S:null };
-  var D = t2p(0, yFromT3(clamp(S.targetT,0,120)));
-  var B = t2p(TW, S.aimY);
-  var A = t2p(S.cue.x, S.cue.y);
-  function d(p,q){ return Math.hypot(p.x-q.x, p.y-q.y); }
-  if (S.mode === 'target' && d({x:x,y:y}, D) < 30) return 'target';
-  if (d({x:x,y:y}, B) < 30) return 'aim';
-  if (d({x:x,y:y}, A) < 32) return 'cue';
+  var p = { x:x, y:y };
+  function d(q){ return Math.hypot(p.x-q.x, p.y-q.y); }
+  if (S.mode === 'target' && d(targetPoint()) < 34) return 'target';
+  if (d(aimPoint()) < 32) return 'aim';
+  if (d(t2p(S.cue.x, S.cue.y)) < 32) return 'cue';
   var t = p2t(x,y);
   if (t.x > -0.12 && t.x < TW+0.12 && t.y > -0.12 && t.y < TH+0.12) return 'cue';
   return null;
 }
 
+/* 포인터 → 가장 가까운 쿠션 위의 위치 (코너를 돌아 매끄럽게) */
+function railFromPointer(sx, sy){
+  var t = p2t(sx, sy);
+  var cx = TW/2, cy = TH/2;
+  var dx = t.x - cx, dy = t.y - cy;
+  if (Math.hypot(dx,dy) < 1e-6) return { rail:S.rail, s:clamp(S.aimS, 0.05, FR().L-0.05) };
+  var tx = Infinity, ty = Infinity;
+  if (dx >  1e-9) tx = (TW - cx)/dx; else if (dx < -1e-9) tx = (0 - cx)/dx;
+  if (dy >  1e-9) ty = (TH - cy)/dy; else if (dy < -1e-9) ty = (0 - cy)/dy;
+  var k = Math.min(tx, ty);
+  var px = cx + dx*k, py = cy + dy*k;
+  var rail = Math.abs(px - TW) < 1e-6 ? 'right'
+           : Math.abs(px) < 1e-6      ? 'left'
+           : Math.abs(py) < 1e-6      ? 'top' : 'bottom';
+  var F = FRAMES[rail];
+  return { rail:rail, s:clamp(F.f(px, py).s, 0.05, F.L - 0.05) };
+}
+
 function moveDrag(x,y){
-  var t = p2t(x,y);
   if (S.drag === 'cue'){
+    var t = p2t(x,y);
     S.cue.x = clamp(t.x, BALL_R+0.02, TW-BALL_R-0.02);
     S.cue.y = clamp(t.y, BALL_R+0.02, TH-BALL_R-0.02);
   } else if (S.drag === 'aim'){
-    S.aimY = clamp(t.y, 0.12, 7.75);
+    var a = railFromPointer(x,y);
+    S.rail = a.rail;
+    S.aimS = a.s;
   } else if (S.drag === 'target'){
-    S.targetT = clamp(t3From(clamp(t.y, 0, TH)), 0, 120);
+    var F = FR(), q = p2t(x,y), fr = F.f(q.x, q.y);
+    S.targetT = clamp(t3Of(clamp(fr.s, 0, F.L), F.L), 0, 120);
   }
   hideHint();
   paint();
@@ -802,19 +907,20 @@ document.addEventListener('gesturestart', function(e){ e.preventDefault(); });
    --------------------------------------------------------------- */
 var PRESETS = [[50,30],[50,20],[40,20],[70,40],[60,30],[45,25],[30,10],[20,20]];
 
-function applyPreset(Sv, Pv){
-  var py = clamp(yFromP1(Pv), 0.12, 7.75);
-  var aim = { x:TW, y:py };
+function applyPreset(Sv, Pv, rail){
+  S.rail = FRAMES[rail] ? rail : 'right';
+  var F = FR();
+  var aimS = clamp(sOfP1(Pv, F.L), 0.12, F.L - 0.25);
   var anchor = (Sv <= 50)
-    ? { x:0, y:clamp(leftFromCue(Sv), 0, TH) }
-    : { x:clamp(bottomFromCue(Sv), 0, TW), y:TH };
-  var dx = aim.x-anchor.x, dy = aim.y-anchor.y, l = Math.hypot(dx,dy) || 1;
-  var off = 0.46;
+    ? { s: F.L*(clamp(Sv,10,50)-10)/40, n: F.W }        // 반대편 쿠션
+    : { s: F.L, n: F.W*(1 - (clamp(Sv,50,90)-50)/40) }; // 옆 쿠션 (수구수 연장)
+  var ds = aimS - anchor.s, dn = 0 - anchor.n, l = Math.hypot(ds,dn) || 1, off = 0.46;
+  var c = F.t(anchor.s + ds/l*off, anchor.n + dn/l*off);
   S.cue = {
-    x: clamp(anchor.x + dx/l*off, BALL_R+0.02, TW-BALL_R-0.02),
-    y: clamp(anchor.y + dy/l*off, BALL_R+0.02, TH-BALL_R-0.02)
+    x: clamp(c.x, BALL_R+0.02, TW-BALL_R-0.02),
+    y: clamp(c.y, BALL_R+0.02, TH-BALL_R-0.02)
   };
-  S.aimY = py;
+  S.aimS = aimS;
   setMode('aim', true);
   paint(); hideHint();
 }
@@ -901,15 +1007,34 @@ window.FH = {
   model: model,
   paint: paint,
   layout: function(){ return L; },
+  frame: function(){ return FR(); },
+  rails: function(){ return RAIL_ORDER.slice(); },
+  railName: railName,
   setCue: function(x,y){
     S.cue = { x:clamp(x,BALL_R+0.02,TW-BALL_R-0.02), y:clamp(y,BALL_R+0.02,TH-BALL_R-0.02) };
     paint(); return model();
   },
-  setAimY: function(y){ S.mode='aim'; setMode('aim', true); S.aimY = clamp(y,0.12,7.75); paint(); return model(); },
+  setRail: function(r){
+    if (!FRAMES[r]) return model();
+    S.rail = r; S.aimS = clamp(S.aimS, 0.05, FRAMES[r].L - 0.05);
+    paint(); return model();
+  },
+  setAim: function(r, s){
+    if (!FRAMES[r]) return model();
+    S.rail = r; S.aimS = clamp(s, 0.05, FRAMES[r].L - 0.05);
+    paint(); return model();
+  },
+  setAimY: function(y){ S.rail='right'; setMode('aim', true); S.aimS = clamp(y,0.12,7.75); paint(); return model(); },
   setTarget: function(v){ S.mode='target'; setMode('target', true); S.targetT = clamp(v,0,120); paint(); return model(); },
   preset: function(a,b){ applyPreset(a,b); return model(); },
+  presetAt: function(r,a,b){ applyPreset(a,b,r); return model(); },
   setMode: function(m){ setMode(m); return model(); },
   tweak: function(k,v){ S[k] = v; paint(); return model(); },
+  aimScreen: function(){ return aimPoint(); },
+  targetScreen: function(){ return targetPoint(); },
+  cueScreen: function(){ return t2p(S.cue.x, S.cue.y); },
+  railAt: function(sx,sy){ return railFromPointer(sx, sy); },
+  canvasBox: function(){ var r = cv.getBoundingClientRect(); return {left:r.left, top:r.top, width:r.width, height:r.height}; },
   simulate: function(kind, pts){
     // pts: [[sx,sy],...] 화면 좌표. 실제 제스처 경로와 같은 함수를 탄다.
     var p0 = pts[0];
@@ -926,6 +1051,7 @@ window.FH = {
   errors: function(){ return ERR.slice(); }
 };
 })();
+
 </script>
 </body>
 </html>
