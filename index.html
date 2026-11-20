@@ -146,7 +146,7 @@ input[type=range]::-webkit-slider-thumb{-webkit-appearance:none;width:19px;heigh
       <li>수구 중심에서 1쿠션 쪽으로 큐를 뻗어 <b>수구 수</b>를 읽는다</li>
       <li><b>수구 수 − 3쿠션 수 = 1쿠션 수</b> → 그 눈금을 겨냥한다</li>
     </ol>
-    <p>3쿠션까지는 계산값 그대로 떨어집니다. 4쿠션까지 보낼 때만 수구 수 50에서 멀어진 만큼 길거나 짧아지니 보정해 주세요.</p>
+    <p>3쿠션까지는 계산값 그대로 떨어집니다. 4쿠션은 수구 수 50을 기준으로 20 멀어질 때마다 5씩 달라집니다 — 수구 70이면 +5 길고, 30이면 −5 짧습니다. 40을 넘으면 오른쪽 장쿠션으로 이어집니다.</p>
     <p>중상단 2팁에 3레일 속도로 부드럽게 밀어칩니다. 세기가 달라지면 같은 겨냥점도 다른 곳에 떨어집니다.</p>
   </section>
 
@@ -275,12 +275,21 @@ function model(){
   var Traw = rd.v - P + S.adj;
   var Tin = clamp(Traw, 0, 120);
   var p3  = { x:0, y:yFromT3(Tin) };
-  var p4  = { x:clamp(Traw/10, 0, TW), y:TH };
+  /* 4쿠션: 수구 수 50을 기준으로 멀어진 만큼 길거나 짧아진다 (70이면 +5, 30이면 -5) */
+  var T4  = Math.max(0, Traw + (rd.v - 50) * 0.25);
+  var p4, p4Rail;
+  if (T4 <= 40){
+    p4 = { x:T4/10, y:TH };                            // 아래 단쿠션
+    p4Rail = 'bottom';
+  } else {
+    p4 = { x:TW, y:clamp(TH - (T4-40)/10, 0, TH) };    // 코너를 돌아 오른쪽 장쿠션으로
+    p4Rail = 'right';
+  }
   var dx = aim.x - cue.x, dy = aim.y - cue.y;
   var p2 = railHitAfter(aim, -dx, dy);
   var degH = Math.atan2(Math.abs(dy), Math.abs(dx)) * 180/Math.PI;
   return {
-    cue:cue, aim:aim, p2:p2, p3:p3, p4:p4,
+    cue:cue, aim:aim, p2:p2, p3:p3, p4:p4, T4:T4, p4Rail:p4Rail,
     S:rd.v, P:P, T:Traw, okS:rd.ok, okT:(Traw >= 0 && Traw <= 120),
     where:rd.kind, degH:degH, degCush:90-degH,
     standard: (p2.y < 0.02)                     // 2쿠션이 위 단쿠션인지
@@ -552,11 +561,21 @@ function drawPath(m){
   ctx.beginPath(); ctx.moveTo(C.x,C.y); ctx.quadraticCurveTo(qx,qy,D.x,D.y); ctx.stroke();
   ctx.restore();
 
-  // 3쿠션 → 4쿠션 (연장)
+  // 3쿠션 → 4쿠션 (2팁 회전으로 테이블 안쪽으로 살짝 꺾여 휘는 연장선)
+  var ex = E.x-D.x, ey = E.y-D.y, el = Math.hypot(ex,ey);
+  var q2x = (D.x+E.x)/2, q2y = (D.y+E.y)/2;
+  if (el > 1){
+    var nx2 = -ey/el, ny2 = ex/el;                      // D→E 수직 방향
+    var ccx2 = t2p(TW/2, TH/2).x, ccy2 = t2p(TW/2, TH/2).y;
+    if ((ccx2-q2x)*nx2 + (ccy2-q2y)*ny2 < 0){ nx2 = -nx2; ny2 = -ny2; }  // 테이블 안쪽
+    var bend = Math.min(18, el*0.06);
+    q2x = clamp(q2x + nx2*bend, L.px+7, L.px+L.pw-7);
+    q2y = clamp(q2y + ny2*bend, L.py+7, L.py+L.ph-7);
+  }
   ctx.save();
   ctx.setLineDash([6,5]);
   ctx.strokeStyle = 'rgba(255,205,92,.55)'; ctx.lineWidth = 1.8;
-  ctx.beginPath(); ctx.moveTo(D.x,D.y); ctx.lineTo(E.x,E.y); ctx.stroke();
+  ctx.beginPath(); ctx.moveTo(D.x,D.y); ctx.quadraticCurveTo(q2x,q2y,E.x,E.y); ctx.stroke();
   ctx.restore();
 
   // 진행 방향 화살표
