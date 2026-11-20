@@ -146,7 +146,7 @@ input[type=range]::-webkit-slider-thumb{-webkit-appearance:none;width:19px;heigh
       <li>수구 중심에서 1쿠션 쪽으로 큐를 뻗어 <b>수구 수</b>를 읽는다</li>
       <li><b>수구 수 − 3쿠션 수 = 1쿠션 수</b> → 그 눈금을 겨냥한다</li>
     </ol>
-    <p>3쿠션까지는 계산값 그대로 떨어집니다. 4쿠션은 수구 수 50을 기준으로 20 멀어질 때마다 5씩 달라집니다 — 수구 70이면 +5 길고, 30이면 −5 짧습니다. 40을 넘으면 오른쪽 장쿠션으로 이어집니다.</p>
+    <p>3쿠션까지는 계산값 그대로 떨어집니다. 4쿠션은 2쿠션→3쿠션 입사각을 그대로 반사시킨 방향에서, 쿠션에 먹는 만큼(약 6°) 각이 조금 죽은 자리입니다 — 50−30=20이면 오른쪽 아래 90 코너로 떨어집니다.</p>
     <p>중상단 2팁에 3레일 속도로 부드럽게 밀어칩니다. 세기가 달라지면 같은 겨냥점도 다른 곳에 떨어집니다.</p>
   </section>
 
@@ -180,6 +180,7 @@ input[type=range]::-webkit-slider-thumb{-webkit-appearance:none;width:19px;heigh
 
 var TW = 4, TH = 8;                       // 테이블 단위 (가로 4칸 × 세로 8칸)
 var BALL_R = 0.105;                        // 공 반지름 (칸 단위)
+var BEND4 = 6 * Math.PI/180;               // 3쿠션에서 쿠션에 먹는 만큼 반사각이 줄어드는 각
 var ERR = [];
 window.addEventListener('error', function(e){ ERR.push(String((e && e.message) || e)); });
 window.addEventListener('unhandledrejection', function(e){ ERR.push('reject:' + e.reason); });
@@ -275,21 +276,26 @@ function model(){
   var Traw = rd.v - P + S.adj;
   var Tin = clamp(Traw, 0, 120);
   var p3  = { x:0, y:yFromT3(Tin) };
-  /* 4쿠션: 수구 수 50을 기준으로 멀어진 만큼 길거나 짧아진다 (70이면 +5, 30이면 -5) */
-  var T4  = Math.max(0, Traw + (rd.v - 50) * 0.25);
-  var p4, p4Rail;
-  if (T4 <= 40){
-    p4 = { x:T4/10, y:TH };                            // 아래 단쿠션
-    p4Rail = 'bottom';
-  } else {
-    p4 = { x:TW, y:clamp(TH - (T4-40)/10, 0, TH) };    // 코너를 돌아 오른쪽 장쿠션으로
-    p4Rail = 'right';
-  }
   var dx = aim.x - cue.x, dy = aim.y - cue.y;
   var p2 = railHitAfter(aim, -dx, dy);
+  /* 4쿠션: 2쿠션 → 3쿠션으로 들어온 방향을 왼쪽 장쿠션에서 그대로 반사시킨 뒤,
+     쿠션에 먹는 만큼(BEND4) 반사각이 줄어든 자리. */
+  var refX = -(p3.x - p2.x), refY = (p3.y - p2.y);
+  var p4, p4Rail;
+  if (refX > 1e-3){
+    var a4 = Math.atan2(refY, refX) + (refY >= 0 ? BEND4 : -BEND4);
+    if (Math.cos(a4) > 1e-6){
+      p4 = railHitAfter(p3, Math.cos(a4), Math.sin(a4));
+      p4Rail = Math.abs(p4.x - TW) < 1e-6 ? 'right' : (p4.y < TH/2 ? 'top' : 'bottom');
+    }
+  }
+  if (!p4){
+    p4 = { x:clamp(Tin/10, 0, TW), y:TH };            // 2·3쿠션이 같은 쿠션에 붙는 예외 배치
+    p4Rail = 'bottom';
+  }
   var degH = Math.atan2(Math.abs(dy), Math.abs(dx)) * 180/Math.PI;
   return {
-    cue:cue, aim:aim, p2:p2, p3:p3, p4:p4, T4:T4, p4Rail:p4Rail,
+    cue:cue, aim:aim, p2:p2, p3:p3, p4:p4, p4Rail:p4Rail,
     S:rd.v, P:P, T:Traw, okS:rd.ok, okT:(Traw >= 0 && Traw <= 120),
     where:rd.kind, degH:degH, degCush:90-degH,
     standard: (p2.y < 0.02)                     // 2쿠션이 위 단쿠션인지
