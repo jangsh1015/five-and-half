@@ -146,7 +146,7 @@ input[type=range]::-webkit-slider-thumb{-webkit-appearance:none;width:19px;heigh
       <li>수구 중심에서 1쿠션 쪽으로 큐를 뻗어 <b>수구 수</b>를 읽는다</li>
       <li><b>수구 수 − 3쿠션 수 = 1쿠션 수</b> → 그 눈금을 겨냥한다</li>
     </ol>
-    <p>3쿠션까지는 계산값 그대로 떨어집니다. 4쿠션은 2쿠션→3쿠션 입사각을 그대로 반사시킨 방향에서, 쿠션에 먹는 만큼(약 6°) 각이 조금 죽은 자리입니다 — 50−30=20이면 오른쪽 아래 90 코너로 떨어집니다.</p>
+    <p>3쿠션까지는 계산값 그대로 떨어집니다. 4쿠션 자리는 3쿠션수가 정합니다 — <b>20</b>이면 오른쪽 아래 90 코너, <b>20보다 작으면</b> 코너를 돌아 오른쪽 장쿠션(장다이)으로, <b>20보다 크면</b> 아래 단쿠션(단다이)으로 떨어집니다. 50−30=20 → 코너 · 45−30=15 → 장다이 · 50−20=30 → 단다이.</p>
     <p>중상단 2팁에 3레일 속도로 부드럽게 밀어칩니다. 세기가 달라지면 같은 겨냥점도 다른 곳에 떨어집니다.</p>
   </section>
 
@@ -180,7 +180,6 @@ input[type=range]::-webkit-slider-thumb{-webkit-appearance:none;width:19px;heigh
 
 var TW = 4, TH = 8;                       // 테이블 단위 (가로 4칸 × 세로 8칸)
 var BALL_R = 0.105;                        // 공 반지름 (칸 단위)
-var BEND4 = 6 * Math.PI/180;               // 3쿠션에서 쿠션에 먹는 만큼 반사각이 줄어드는 각
 var ERR = [];
 window.addEventListener('error', function(e){ ERR.push(String((e && e.message) || e)); });
 window.addEventListener('unhandledrejection', function(e){ ERR.push('reject:' + e.reason); });
@@ -278,24 +277,25 @@ function model(){
   var p3  = { x:0, y:yFromT3(Tin) };
   var dx = aim.x - cue.x, dy = aim.y - cue.y;
   var p2 = railHitAfter(aim, -dx, dy);
-  /* 4쿠션: 2쿠션 → 3쿠션으로 들어온 방향을 왼쪽 장쿠션에서 그대로 반사시킨 뒤,
-     쿠션에 먹는 만큼(BEND4) 반사각이 줄어든 자리. */
-  var refX = -(p3.x - p2.x), refY = (p3.y - p2.y);
-  var p4, p4Rail;
-  if (refX > 1e-3){
-    var a4 = Math.atan2(refY, refX) + (refY >= 0 ? BEND4 : -BEND4);
-    if (Math.cos(a4) > 1e-6){
-      p4 = railHitAfter(p3, Math.cos(a4), Math.sin(a4));
-      p4Rail = Math.abs(p4.x - TW) < 1e-6 ? 'right' : (p4.y < TH/2 ? 'top' : 'bottom');
-    }
-  }
-  if (!p4){
-    p4 = { x:clamp(Tin/10, 0, TW), y:TH };            // 2·3쿠션이 같은 쿠션에 붙는 예외 배치
+  /* 4쿠션: 반사각을 그대로 쓰지 않고, 3쿠션수(T)가 정하는 4쿠션 자리표를 따른다.
+       T = 20 → 오른쪽 아래 90 코너 바로 옆 (3.95, 8)
+       T < 20 → 코너를 돌아 오른쪽 장쿠션(장다이)으로 올라간다
+       T > 20 → 아래 단쿠션(단다이)을 왼쪽으로 내려온다
+     같은 3쿠션수면 수구 위치가 달라도 같은 자리에 떨어지도록 T만 쓴다. */
+  var Teff = Math.max(0, Tin);
+  var p4, p4Rail, p4Zone;
+  if (Teff < 20 - 1e-6){
+    p4 = { x:TW, y:clamp(TH - (20 - Teff)*0.24, 0, TH) };
+    p4Rail = 'right';
+  } else {
+    p4 = { x:clamp(TW - (Teff - 20)*0.14 - 0.05, 0, TW), y:TH };
     p4Rail = 'bottom';
   }
+  p4Zone = (Math.abs(Teff - 20) < 0.15) ? 'corner'
+         : (Teff < 20 ? 'long' : 'short');   // 장다이 / 단다이
   var degH = Math.atan2(Math.abs(dy), Math.abs(dx)) * 180/Math.PI;
   return {
-    cue:cue, aim:aim, p2:p2, p3:p3, p4:p4, p4Rail:p4Rail,
+    cue:cue, aim:aim, p2:p2, p3:p3, p4:p4, p4Rail:p4Rail, p4Zone:p4Zone,
     S:rd.v, P:P, T:Traw, okS:rd.ok, okT:(Traw >= 0 && Traw <= 120),
     where:rd.kind, degH:degH, degCush:90-degH,
     standard: (p2.y < 0.02)                     // 2쿠션이 위 단쿠션인지
@@ -658,6 +658,11 @@ function drawMarkers(m){
   pill('수구 ' + fmt(m.S), A.x + 36, A.y - r - 20, '#ffffff');
   pill('1쿠션 ' + fmt(m.P), B.x - 50, B.y - 26, '#5cd0ff');
   pill('3쿠션 ' + fmt(m.T), D.x + 58, D.y + 22, '#ffc857');
+  // 4쿠션 말풍선은 점에서 테이블 안쪽으로 붙여, 눕힌 보기에서도 쿠션 위로 뜨지 않게
+  var Ec = t2p(TW/2, TH/2);
+  var dxl = Ec.x - E.x, dyl = Ec.y - E.y, dl = Math.hypot(dxl, dyl) || 1;
+  pill('4쿠션 ' + (m.p4Zone === 'corner' ? '코너' : m.p4Zone === 'long' ? '장다이' : '단다이'),
+       E.x + dxl/dl*66, E.y + dyl/dl*52, '#ffc857');
 }
 
 function drawLandCaption(m){
