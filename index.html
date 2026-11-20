@@ -149,6 +149,7 @@ input[type=range]::-webkit-slider-thumb{-webkit-appearance:none;width:19px;heigh
     <p>3쿠션까지는 계산값 그대로 떨어집니다. 4쿠션 자리는 3쿠션수가 정합니다 — <b>20</b>이면 코너, <b>20보다 작으면</b> 코너를 돌아 1쿠션 쪽 쿠션(장다이/단다이)으로, <b>20보다 크면</b> 반대편에서 옆 쿠션(단다이/장다이)으로 떨어집니다. 50−30=20 → 코너 · 45−30=15 → 장다이 · 50−20=30 → 단다이.</p>
     <p>파란 <b>1쿠션</b>은 오른쪽·왼쪽 장쿠션은 물론 위·아래 단쿠션 어디로든 옮길 수 있습니다. 1쿠션을 놓은 쿠션을 기준으로 눈금과 계산, 1→2→3→4쿠션 궤적이 함께 돌아갑니다.</p>
     <p>위·아래 <b>단쿠션</b>에 1쿠션을 놓으면 장쿠션 공식(수구−1쿠션=3쿠션) 대신 실제 2:1 당구대 반사로 3·4쿠션이 짧게 이어집니다. 2쿠션에서 2팁 회전·쿠션 손실 6°를 더해 그리고, 3쿠션 숫자는 공이 실제로 맞은 쿠션의 눈금으로 읽습니다.</p>
+    <p>장쿠션 1쿠션에서 각도가 얕아 <b>2쿠션이 반대편 장쿠션</b>에 먼저 맞으면(예: 1쿠션 54.9·수구 55.5), 3쿠션이 그 장쿠션에 다시 붙지 않도록 아래·위 단쿠션으로 꺾여 실제 반사로 이어집니다. 카드에는 실제 맞은 쿠션 이름과 눈금이 표시됩니다.</p>
     <p>중상단 2팁에 3레일 속도로 부드럽게 밀어칩니다. 세기가 달라지면 같은 겨냥점도 다른 곳에 떨어집니다.</p>
   </section>
 
@@ -408,6 +409,13 @@ function model(){
   var hs = firstHit(aimS, 0, aimS - c.s, c.n);
   var p2 = F.t(hs.s, hs.n);
 
+  /* 예외: 1쿠션을 장쿠션에 놓았는데 각도가 얕아 2쿠션이 '반대편 장쿠션'에 먼저 맞은 경우
+     (예: 왼쪽 장쿠션 1쿠션 → 오른쪽 장쿠션 2쿠션). 이미 2쿠션이 그 장쿠션이므로
+     3쿠션을 그 쿠션의 T 자리표에 다시 붙이면 같은 쿠션을 따라 꺾이는 예술구가 된다.
+     이때는 단쿠션 1쿠션과 같이 실제 2:1 반사로 2 → 3 → 4쿠션을 잇는다.
+     정확히 코너에 맞은 경우는 나눌 쿠션이 없으므로 기존 자리표를 그대로 둔다. */
+  var cross = !short && Math.abs(hs.n - Wf) < 1e-9 && hs.s > 1e-9 && hs.s < Lf - 1e-9;
+
   var p3, p4, p4Rail, p4Zone, p4Text, p3Rail = null, p3Read = 0, p2Rail;
 
   if (short){
@@ -422,6 +430,18 @@ function model(){
     p4Rail = sp.p4.rail || railOfPoint(p4.x, p4.y);
     var lb = p4Lab(p4Rail, p4);
     p4Zone = lb.zone; p4Text = lb.text;
+  } else if (cross){
+    /* 2쿠션이 반대편 장쿠션 — 3쿠션은 그 쿠션에 고정할 수 없으니 실제 반사로 잇는다 */
+    var cp = shortPath(S.cue, aim, S.rail);
+    p2 = { x:cp.p2.x, y:cp.p2.y };
+    p2Rail = cp.p2.rail || railOfPoint(p2.x, p2.y);
+    p3 = { x:cp.p3.x, y:cp.p3.y };
+    p3Rail = cp.p3.rail || railOfPoint(p3.x, p3.y);
+    p3Read = railRead(p3Rail, p3.x, p3.y).v;
+    p4 = { x:cp.p4.x, y:cp.p4.y };
+    p4Rail = cp.p4.rail || railOfPoint(p4.x, p4.y);
+    var lc = p4Lab(p4Rail, p4);
+    p4Zone = lc.zone; p4Text = lc.text;
   } else {
     p2Rail = railOfPoint(p2.x, p2.y);
     p3 = F.t(sOfT(Tin, Lf), Wf);
@@ -447,11 +467,11 @@ function model(){
   return {
     cue:{ x:S.cue.x, y:S.cue.y }, aim:aim, p2:p2, p3:p3, p4:p4, p2Rail:p2Rail,
     p4Rail:p4Rail, p4Zone:p4Zone, p4Text:p4Text,
-    S:rd.v, P:P, T:Traw, okS:rd.ok, okT:short ? true : (Traw >= 0 && Traw <= 120),
+    S:rd.v, P:P, T:Traw, okS:rd.ok, okT:(short || cross) ? true : (Traw >= 0 && Traw <= 120),
     where:rd.kind, degH:degH, degCush:90-degH,
     rail:S.rail, railName:F.name, L:Lf, W:Wf,
-    short:short, p3Rail:p3Rail, p3Read:p3Read,
-    Tdisp: short ? p3Read : Tin,
+    short:short, cross:cross, real:(short || cross), p3Rail:p3Rail, p3Read:p3Read,
+    Tdisp: (short || cross) ? p3Read : Tin,
     standard: (p2.y < 0.02)
   };
 }
@@ -861,7 +881,7 @@ function drawMarkers(m){
     var sg = (y < L.py + L.ph/2) ? 1 : -1;               // 화면 위쪽이면 아래로, 아래쪽이면 위로
     /* 단쿠션 1쿠션은 3·4쿠션 자리가 가까워 말풍선이 겹칠 수 있어 자리를 비켜 놓는다.
        장쿠션 눈금·말풍선은 예전 그대로 둔다(검증본과 픽셀 동일). */
-    while (m.short && !free(box, 3) && k < 5){
+    while (m.real && !free(box, 3) && k < 5){
       k++; dy += st*sg;
       box = pill(txt, x, y + dy, color);
     }
@@ -870,7 +890,7 @@ function drawMarkers(m){
   }
   tag('수구 ' + fmt(m.S), A.x + 36, A.y - r - 20, '#ffffff');
   tag('1쿠션 ' + fmt(m.P), b1.x, b1.y - 6, '#5cd0ff');
-  tag('3쿠션 ' + (m.short ? (SHORT_NAME[m.p3Rail] || '') + ' ' : '') + fmt(m.Tdisp), b3.x, b3.y + 4, '#ffc857');
+  tag('3쿠션 ' + (m.real ? (SHORT_NAME[m.p3Rail] || '') + ' ' : '') + fmt(m.Tdisp), b3.x, b3.y + 4, '#ffc857');
   tag('4쿠션 ' + m.p4Text, b4.x, b4.y, '#ffc857');
 }
 
@@ -893,7 +913,7 @@ function drawLegend(m){
   var lines = [
     ['수구',  '1쿠션 반대편 쿠션 50(코너) → 10 · 옆 쿠션 50 → 90', '#ffffff'],
     ['1쿠션', F.name + ' 0 → 110 (50 뒤 반 칸 10)', '#5cd0ff'],
-    ['3쿠션', (m && m.short) ? '실제 맞은 쿠션의 눈금 (단쿠션 1쿠션 = 실제 반사)'
+    ['3쿠션', (m && m.real) ? '실제 맞은 쿠션의 눈금 (실제 반사 궤적)'
                              : '반대편 쿠션 0 → 120 (40 뒤 반 칸 10)', '#ffc857']
   ];
   var f = 10.5, lh = 15;
@@ -920,16 +940,18 @@ function updateCard(m){
   document.getElementById('v1').textContent = fmt(m.S);
   document.getElementById('v2').textContent = fmt(m.P);
   document.getElementById('v3').textContent = fmt(m.Tdisp);
-  /* 단쿠션 1쿠션은 공식(수구−1쿠션=3쿠션)이 아니라 실제 궤적이므로 화살표로 읽는다 */
-  document.getElementById('op1').textContent = m.short ? '→' : '−';
-  document.getElementById('op2').textContent = m.short ? '→' : '=';
+  /* 단쿠션 1쿠션·2쿠션 장쿠션 예외는 공식(수구−1쿠션=3쿠션)이 아니라 실제 궤적이므로 화살표로 읽는다 */
+  document.getElementById('op1').textContent = m.real ? '→' : '−';
+  document.getElementById('op2').textContent = m.real ? '→' : '=';
   document.getElementById('k3').textContent =
-    m.short ? ('3쿠션 ' + (SHORT_NAME[m.p3Rail] || '')) : '3쿠션';
+    m.real ? ('3쿠션 ' + (SHORT_NAME[m.p3Rail] || '')) : '3쿠션';
   document.getElementById('sub').innerHTML = m.short
     ? '1쿠션 <b>' + m.railName + '</b> · 입사 <b>' + m.degCush.toFixed(0) + '°</b> / 반사 <b>' +
       m.degCush.toFixed(0) + '°</b> · 2쿠션 <b>' + railName(m.p2Rail) + '</b>'
-    : '1쿠션 <b>' + m.railName + '</b> · 출발 <b>' + m.degH.toFixed(0) + '°</b> · 입사 <b>' +
-      m.degCush.toFixed(0) + '°</b> / 반사 <b>' + m.degCush.toFixed(0) + '°</b>';
+    : (m.cross
+      ? '1쿠션 <b>' + m.railName + '</b> · 2쿠션 <b>' + railName(m.p2Rail) + '</b> · 실제 반사 궤적'
+      : '1쿠션 <b>' + m.railName + '</b> · 출발 <b>' + m.degH.toFixed(0) + '°</b> · 입사 <b>' +
+        m.degCush.toFixed(0) + '°</b> / 반사 <b>' + m.degCush.toFixed(0) + '°</b>');
   var tip = document.getElementById('tip');
   tip.classList.remove('warn');
   if (NOTICE){
@@ -940,6 +962,10 @@ function updateCard(m){
     tip.classList.add('warn');
   } else if (!m.okT){
     tip.textContent = '3쿠션 지점이 쿠션 밖입니다 — 1쿠션 조준점을 조금 옮겨 보세요';
+    tip.classList.add('warn');
+  } else if (m.cross && S.mode === 'target' && Math.abs(m.p3Read - m.T) > 0.5){
+    /* 목표 모드에서 2쿠션이 반대편 장쿠션에 먼저 맞으면 목표 자리표를 쓸 수 없다 */
+    tip.textContent = '장쿠션 2쿠션 반사 — 3쿠션 실제 ' + fmt(m.p3Read) + ' (목표 ' + fmt(m.T) + ')';
     tip.classList.add('warn');
   } else {
     tip.textContent = tipText(m);
