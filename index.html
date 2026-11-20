@@ -53,7 +53,7 @@ button.tgl:active{transform:scale(.95)}
   white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
 .tip.warn{color:#ffb26b}
 
-#stage{flex:1 1 auto;position:relative;min-height:0}
+#stage{flex:1 1 auto;position:relative;min-height:0;min-width:0;overflow:hidden}
 #c{display:block;touch-action:none}
 #hint{position:absolute;left:50%;top:6px;transform:translateX(-50%);z-index:3;
   background:rgba(6,12,20,.82);border:1px solid #24344a;color:#b9cbdd;
@@ -71,6 +71,24 @@ button.tgl:active{transform:scale(.95)}
 #landNote b{color:#e6f0fa;font-weight:700}
 #landNote p{margin:0 0 6px;color:#7f93a8}
 
+#foot{flex:0 0 auto;display:flex;align-items:center;justify-content:center;gap:4px;
+  height:22px;margin:1px 10px 0;border-top:1px solid rgba(255,255,255,.05);
+  font-size:9.5px;letter-spacing:.02em;color:#5f7488}
+#foot .by{color:#4f6274;font-weight:700;letter-spacing:.05em}
+#foot b{color:#9db3c9;font-weight:800;letter-spacing:0}
+#foot i{font-style:normal;font-size:10px;line-height:1;opacity:.9}
+
+@media (orientation:landscape) and (max-height:540px){
+  #app{display:grid;grid-template-columns:minmax(0,1fr) 316px;grid-template-rows:auto auto 1fr auto;
+       grid-template-areas:"hdr hdr" "stage card" "stage dock" "stage foot"}
+  header{grid-area:hdr}
+  #stage{grid-area:stage;height:auto !important;flex:none;padding:0 6px 0 0}
+  #card{grid-area:card;margin:0 8px 4px 0;align-self:start;min-width:0}
+  #dock{grid-area:dock;padding:2px 8px 4px 0;align-self:end;min-width:0}
+  #foot{grid-area:foot;margin:0 8px 1px 0;align-self:end}
+  #landNote{display:none !important}
+  #hint{top:auto;bottom:4px}
+}
 #dock{flex:0 0 auto;padding:5px 10px 8px;display:flex;flex-direction:column;gap:5px}
 .seg{display:flex;background:#0f1822;border:1px solid #1e2b3b;border-radius:11px;padding:3px;gap:3px}
 .seg button{flex:1;height:29px;border:0;border-radius:8px;background:transparent;color:#8099b2;
@@ -144,6 +162,8 @@ input[type=range]::-webkit-slider-thumb{-webkit-appearance:none;width:19px;heigh
     </div>
     <div class="chips" id="chips"></div>
   </div>
+
+  <footer id="foot"><span class="by">Program by</span> <b>Seokhoon Jang</b> <i>🎱</i></footer>
 </div>
 
 <script>
@@ -288,7 +308,8 @@ function layoutCanvas(){
 }
 
 function computeLayout(){
-  var portrait = !S.rot;
+  var auto = (VW / VH) > 1.15;                 // 폰을 눕히면 표도 자동으로 눕힌다
+  var portrait = !(S.rot || auto);
   var uw = portrait ? TW : TH;              // 화면상 가로(칸)
   var uh = portrait ? TH : TW;              // 화면상 세로(칸)
   var rail = Math.round(clamp(Math.min(VW,VH)*0.085, 24, 34));
