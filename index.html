@@ -550,7 +550,7 @@ function paint(){
   if (S.guide) drawGuide(m);
   drawPath(m);
   drawMarkers(m);
-  if (!L.portrait) drawLegend();
+  if (!L.portrait) drawLegend(m);
   updateCard(m);
   return m;
 }
@@ -888,12 +888,13 @@ function drawLandCaption(m){
   ctx.fillText('수구 − 1쿠션 = 3쿠션', VW/2, y + f*0.5 + 22);
 }
 
-function drawLegend(){
+function drawLegend(m){
   var F = FR();
   var lines = [
     ['수구',  '1쿠션 반대편 쿠션 50(코너) → 10 · 옆 쿠션 50 → 90', '#ffffff'],
     ['1쿠션', F.name + ' 0 → 110 (50 뒤 반 칸 10)', '#5cd0ff'],
-    ['3쿠션', '반대편 쿠션 0 → 120 (40 뒤 반 칸 10)', '#ffc857']
+    ['3쿠션', (m && m.short) ? '실제 맞은 쿠션의 눈금 (단쿠션 1쿠션 = 실제 반사)'
+                             : '반대편 쿠션 0 → 120 (40 뒤 반 칸 10)', '#ffc857']
   ];
   var f = 10.5, lh = 15;
   var top = L.py - L.rail - 14 - lines.length*lh;
