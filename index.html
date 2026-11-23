@@ -334,17 +334,40 @@ function mirrorDir(ux, uy, rail){
   return { x:ux - k*N.x, y:uy - k*N.y };
 }
 
-/* 쿠션에서 나온 방향을 법선 기준으로 deg만큼 더 벌린다 (2팁 회전 + 쿠션 손실) */
+/* 쿠션에서 나온 방향을 법선 기준으로 deg만큼 더 벌린다 (2팁 회전 + 쿠션 손실).
+   회전은 쿠션 방향 성분을 밀어 주는 힘이지, 정면으로 들어간 공을 옆으로 돌려세우는 힘이
+   아니다. 그래서 벌림은 입사각이 클수록 크고 정면(0°)에서는 0으로 줄어든다.
+   (단쿠션에서 반대편 단쿠션을 정면으로 때린 공이 쿠션마다 6°씩 쌓여 12° 이상 대각선으로
+    날아가던 오류를 이 비율로 막는다.) */
 function spinBend(ux, uy, rail, deg){
   var N = railNormal(rail);
   var an = ux*N.x + uy*N.y;                       // 법선 성분 (안쪽 +)
   if (an <= 1e-9) return { x:ux, y:uy };
   var at = ux*N.tx + uy*N.ty;                     // 쿠션 방향 성분
   var sg = at >= 0 ? 1 : -1;
-  var ang = Math.atan2(Math.abs(at), an) + deg*Math.PI/180;
+  var fl = Math.hypot(ux, uy) || 1;
+  var gr = Math.sqrt(Math.abs(at)/fl + 0.02);     // 정면 ≈0.14 → 쿠션을 따라 갈 때 1
+  var ang = Math.atan2(Math.abs(at), an) + deg*gr*Math.PI/180;
   if (ang > Math.PI/2 - 0.015) ang = Math.PI/2 - 0.015;
   var ca = Math.cos(ang), sa = Math.sin(ang)*sg;
   return { x: N.x*ca + N.tx*sa, y: N.y*ca + N.ty*sa };
+}
+
+/* 3쿠션 장쿠션에서 본 4쿠션 착지.
+   2→3 실제 입사 벡터를 그 쿠션에서 반사(+2팁 회전)시킨 방향과, 기존 자리표가 가리키는
+   방향을 blend(0=자리표, 1=반사)로 섞어 p3에서 rayHit으로 쿠션 위 착지점을 구한다. */
+function reflect4(p2, p3, rail, formP4, blend){
+  var fx = formP4.x - p3.x, fy = formP4.y - p3.y;
+  var fl = Math.hypot(fx, fy) || 1; fx /= fl; fy /= fl;
+  var ux = p3.x - p2.x, uy = p3.y - p2.y;
+  var ul = Math.hypot(ux, uy) || 1; ux /= ul; uy /= ul;
+  var md = mirrorDir(ux, uy, rail);               // 3쿠션 반사
+  md = spinBend(md.x, md.y, rail, CUSH);          // 2팁 회전 + 쿠션 손실
+  var dx = fx*(1 - blend) + md.x*blend;
+  var dy = fy*(1 - blend) + md.y*blend;
+  var dl = Math.hypot(dx, dy);
+  if (dl < 1e-6) return { x:formP4.x, y:formP4.y, rail:null };
+  return rayHit(p3.x, p3.y, dx/dl, dy/dl);
 }
 
 /* 단쿠션 1쿠션 → 2·3·4쿠션 실제 궤적 (테이블 좌표) */
@@ -457,9 +480,24 @@ function model(){
     } else {
       p4 = F.t(Lf, clamp(Wf*(0.0125 + 0.035*(Teff - 20)), 0, Wf));
       p4Rail = F.endS;
+      /* T > 35: 위 자리표가 아래 단다이 끝(Wf)에 붙어 T ≥ 48.2면 4쿠션이 왼쪽 코너에
+         박힌다. 3쿠션이 반대편 장쿠션 아래쪽에 깊게 맞는 샷은 자리표 대신 2→3 실제
+         입사 벡터를 3쿠션에서 반사(+2팁 회전)시킨 방향으로 4쿠션을 잇는다.
+         T = 35 자리표(n ≈ 2.15)와 뚝 끊기지 않도록 35~45에서 두 방향을 smoothstep으로 섞는다. */
+      if (Teff > 35){
+        var bk = clamp((Teff - 35)/10, 0, 1); bk = bk*bk*(3 - 2*bk);
+        var r4 = reflect4(p2, p3, F.opp, p4, bk);
+        p4 = { x:r4.x, y:r4.y };
+        p4Rail = r4.rail || railOfPoint(p4.x, p4.y);
+      }
     }
-    p4Zone = (Math.abs(Teff - 20) < 0.15) ? 'corner' : (Teff < 20 ? 'long' : 'short');
-    p4Text = p4Zone === 'corner' ? '코너' : ((p4Rail === 'left' || p4Rail === 'right') ? '장다이' : '단다이');
+    if (Teff > 35){
+      var lb4 = p4Lab(p4Rail, p4);
+      p4Zone = lb4.zone; p4Text = lb4.text;
+    } else {
+      p4Zone = (Math.abs(Teff - 20) < 0.15) ? 'corner' : (Teff < 20 ? 'long' : 'short');
+      p4Text = p4Zone === 'corner' ? '코너' : ((p4Rail === 'left' || p4Rail === 'right') ? '장다이' : '단다이');
+    }
   }
 
   var degH = Math.atan2(Math.abs(c.n), Math.abs(aimS - c.s)) * 180/Math.PI;
@@ -773,21 +811,11 @@ function drawPath(m){
   ctx.beginPath(); ctx.moveTo(C.x,C.y); ctx.quadraticCurveTo(qx,qy,D.x,D.y); ctx.stroke();
   ctx.restore();
 
-  // 3쿠션 → 4쿠션 (2팁 회전으로 테이블 안쪽으로 살짝 꺾여 휘는 연장선)
-  var ex = E.x-D.x, ey = E.y-D.y, el = Math.hypot(ex,ey);
-  var q2x = (D.x+E.x)/2, q2y = (D.y+E.y)/2;
-  if (el > 1){
-    var nx2 = -ey/el, ny2 = ex/el;                      // D→E 수직 방향
-    var ccx2 = t2p(TW/2, TH/2).x, ccy2 = t2p(TW/2, TH/2).y;
-    if ((ccx2-q2x)*nx2 + (ccy2-q2y)*ny2 < 0){ nx2 = -nx2; ny2 = -ny2; }  // 테이블 안쪽
-    var bend = Math.min(18, el*0.06);
-    q2x = clamp(q2x + nx2*bend, L.px+7, L.px+L.pw-7);
-    q2y = clamp(q2y + ny2*bend, L.py+7, L.py+L.ph-7);
-  }
+  // 3쿠션 → 4쿠션 (반사 방향 그대로 직선으로 뻗는 연장선)
   ctx.save();
   ctx.setLineDash([6,5]);
   ctx.strokeStyle = 'rgba(255,205,92,.55)'; ctx.lineWidth = 1.8;
-  ctx.beginPath(); ctx.moveTo(D.x,D.y); ctx.quadraticCurveTo(q2x,q2y,E.x,E.y); ctx.stroke();
+  ctx.beginPath(); ctx.moveTo(D.x,D.y); ctx.lineTo(E.x,E.y); ctx.stroke();
   ctx.restore();
 
   // 진행 방향 화살표
