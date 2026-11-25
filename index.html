@@ -35,6 +35,10 @@ button.tgl{background:#141e2a;border:1px solid #24344a;color:var(--dim);border-r
   display:inline-flex;align-items:center;justify-content:center}
 button.tgl.on{color:#07121b;background:var(--cyan);border-color:var(--cyan);font-weight:800}
 button.tgl:active{transform:scale(.95)}
+a.homebtn{flex:0 0 auto;display:inline-flex;align-items:center;gap:2px;height:26px;padding:0 7px;
+  border-radius:9px;border:1px solid #24344a;background:#141e2a;color:#8ba0b8;text-decoration:none;
+  font-size:10.5px;font-weight:700;letter-spacing:-.3px;line-height:1;white-space:nowrap}
+a.homebtn:active{transform:scale(.95)}
 
 #card{flex:0 0 auto;margin:0 10px 5px;background:linear-gradient(180deg,#121c28,#0c141d);
   border:1px solid #1c2938;border-radius:14px;padding:7px 9px 6px;box-shadow:0 6px 18px rgba(0,0,0,.35)}
@@ -114,6 +118,7 @@ input[type=range]::-webkit-slider-thumb{-webkit-appearance:none;width:19px;heigh
 <body>
 <div id="app">
   <header>
+    <a class="homebtn" href="https://jangsh1015.github.io/" aria-label="장석훈 홈페이지로 돌아가기"><span aria-hidden="true">←</span> 홈</a>
     <h1>🎱 파이브앤하프<em>3쿠션</em></h1>
     <div class="sp"></div>
     <button class="tgl on" id="btnNums">숫자</button>
